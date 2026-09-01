@@ -1,0 +1,136 @@
+From 4b96f51d031bab456cff62d1a8b6876fa9304742 Mon Sep 17 00:00:00 2001
+From: Dan Brickley <danbri@danbri.org>
+Date: Tue, 1 Sep 2026 13:58:49 +0100
+Subject: [PATCH] mod_mix_pam: recognize supported MIX namespaces
+
+Problem and evidence:
+
+bounce_sm_packet used only xmpp:has_subtag(Msg, #mix{}). The bundled xmpp codec compares both the element name and namespace, so that predicate matches the empty namespace on locally constructed mod_mix records but does not match decoded records carrying explicit Core:0 or Core:1 namespaces. Runtime tracing confirmed both representations are relevant at the participant-server boundary.
+
+Protocol expectation:
+
+A participant server implementing XEP-0405 must forward messages from a joined MIX channel. ejabberd and its bundled codec support XEP-0369 Core:0 and Core:1, while mod_mix currently routes locally built MIX records before an encode/decode round trip.
+
+Change:
+
+Keep the original empty-namespace predicate and add explicit Core:0 and Core:1 predicates through a small helper. Export the helper only in TEST builds and cover all three supported representations.
+
+Status-quo compatibility:
+
+The original locally generated empty-namespace representation remains accepted. The patch adds decoded Core:0 and Core:1 records without changing emitted stanzas, channel mappings, persistence, cache behavior, MAM behavior, or resource routing. Unrelated and unknown namespaces remain rejected.
+
+Interoperability and operational risks:
+
+The patch activates the existing all-active-resources delivery path for explicitly namespaced MIX messages, which may reveal separate duplicate-handling bugs in clients with multiple resources. Runtime cost is at most two additional subtag predicates in this narrow groupchat hook. Reverting this commit restores the single original predicate.
+
+Verification:
+
+Focused EUnit on Erlang/OTP 29.0.5 accepts the local empty representation, Core:0 and populated Core:1; rejects an unknown MIX namespace and a non-MIX subtag; 5 tests, 0 failures. The complete image builds on pinned Erlang/OTP 28.5.0.4. An authenticated loopback client joined through PAM, received its unique message live, and recovered it through channel MAM. A Tailnet WebSocket browser joined, sent livefix-browser-1, and displayed the server echo immediately. A distinct BeagleIM 6.0.1 account sent bloop and the browser received it live. Reverse visible delivery in BeagleIM, exact multi-resource delivery count, no-mapping rejection, and a wire-level Core:0 proof remain tracked before upstream consideration.
+---
+ src/mod_mix_pam.erl       | 15 ++++++++++-
+ test/mod_mix_pam_test.erl | 53 +++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 67 insertions(+), 1 deletion(-)
+ create mode 100644 test/mod_mix_pam_test.erl
+
+diff --git a/src/mod_mix_pam.erl b/src/mod_mix_pam.erl
+index 96f8eac..50f2682 100644
+--- a/src/mod_mix_pam.erl
++++ b/src/mod_mix_pam.erl
+@@ -36,6 +36,10 @@
+ 	 webadmin_user/4,
+ 	 webadmin_menu_hostuser/4, webadmin_page_hostuser/4]).
+ 
++-ifdef(TEST).
++-export([has_mix_subtag/1]).
++-endif.
++
+ -include_lib("xmpp/include/xmpp.hrl").
+ -include("logger.hrl").
+ -include("mod_roster.hrl").
+@@ -150,7 +154,7 @@ mod_doc() ->
+ bounce_sm_packet({_, #message{to = #jid{lresource = <<>>} = To,
+ 			      from = From,
+ 			      type = groupchat} = Msg} = Acc) ->
+-    case xmpp:has_subtag(Msg, #mix{}) of
++    case has_mix_subtag(Msg) of
+ 	true ->
+ 	    {LUser, LServer, _} = jid:tolower(To),
+ 	    case get_channel(To, From) of
+@@ -170,6 +174,15 @@ bounce_sm_packet({_, #message{to = #jid{lresource = <<>>} = To,
+ bounce_sm_packet(Acc) ->
+     Acc.
+ 
++-spec has_mix_subtag(message()) -> boolean().
++has_mix_subtag(Msg) ->
++    %% Keep matching the empty namespace used by mod_mix for locally built
++    %% records.  Also match explicit namespaces found on decoded stanzas:
++    %% Core:0 preserves wire compatibility and Core:1 handles current MIX.
++    xmpp:has_subtag(Msg, #mix{}) orelse
++    xmpp:has_subtag(Msg, #mix{xmlns = ?NS_MIX_CORE_0}) orelse
++    xmpp:has_subtag(Msg, #mix{xmlns = ?NS_MIX_CORE_1}).
++
+ -spec disco_sm_features({error, stanza_error()} | empty | {result, [binary()]},
+ 			jid(), jid(), binary(), binary()) ->
+ 			       {error, stanza_error()} | empty | {result, [binary()]}.
+diff --git a/test/mod_mix_pam_test.erl b/test/mod_mix_pam_test.erl
+new file mode 100644
+index 0000000..a95f28a
+--- /dev/null
++++ b/test/mod_mix_pam_test.erl
+@@ -0,0 +1,53 @@
++%%%-------------------------------------------------------------------
++%%% Regression tests for MIX participant-server message recognition.
++%%%
++%%% Copyright (C) 2026 Dan Brickley
++%%%
++%%% This program is free software; you can redistribute it and/or
++%%% modify it under the terms of the GNU General Public License as
++%%% published by the Free Software Foundation; either version 2 of the
++%%% License, or (at your option) any later version.
++%%%
++%%% This program is distributed in the hope that it will be useful,
++%%% but WITHOUT ANY WARRANTY; without even the implied warranty of
++%%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++%%% General Public License for more details.
++%%%
++%%% You should have received a copy of the GNU General Public License along
++%%% with this program; if not, write to the Free Software Foundation, Inc.,
++%%% 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++%%%-------------------------------------------------------------------
++-module(mod_mix_pam_test).
++
++-include_lib("eunit/include/eunit.hrl").
++-include_lib("xmpp/include/xmpp.hrl").
++
++core_0_mix_subtag_test() ->
++    Msg = #message{sub_els = [#mix{xmlns = ?NS_MIX_CORE_0}]},
++    ?assert(mod_mix_pam:has_mix_subtag(Msg)).
++
++core_1_mix_subtag_test() ->
++    Msg = #message{sub_els = [#mix{xmlns = ?NS_MIX_CORE_1,
++                                  submission_id = <<"submission">>,
++                                  jid = jid:make(<<"alice">>, <<"example.test">>),
++                                  nick = <<"Alice">>}]},
++    %% This is the exact predicate used before the fix.  The empty namespace
++    %% in its template prevents it from matching the decoded Core:1 record.
++    ?assertNot(xmpp:has_subtag(Msg, #mix{})),
++    ?assert(mod_mix_pam:has_mix_subtag(Msg)).
++
++locally_built_mix_subtag_test() ->
++    Msg = #message{sub_els = [#mix{}]},
++    %% mod_mix builds this record in memory and routes it without a codec
++    %% round trip, so its namespace remains empty.  Preserve that existing
++    %% local-delivery path while adding explicit Core namespace support.
++    ?assert(xmpp:has_subtag(Msg, #mix{})),
++    ?assert(mod_mix_pam:has_mix_subtag(Msg)).
++
++unknown_mix_namespace_test() ->
++    Msg = #message{sub_els = [#mix{xmlns = <<"urn:example:not-mix">>}]},
++    ?assertNot(mod_mix_pam:has_mix_subtag(Msg)).
++
++non_mix_subtag_test() ->
++    Msg = #message{sub_els = [#delay{}]},
++    ?assertNot(mod_mix_pam:has_mix_subtag(Msg)).
+-- 
+2.50.1 (Apple Git-155)
+

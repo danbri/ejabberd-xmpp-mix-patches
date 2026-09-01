@@ -1,0 +1,139 @@
+From 69da0ed7a16965ce24ba5fbf005b3502ad9cf705 Mon Sep 17 00:00:00 2001
+From: Dan Brickley <danbri@danbri.org>
+Date: Tue, 1 Sep 2026 16:16:17 +0100
+Subject: [PATCH] mod_mix: emit Core 1 metadata on channel messages
+
+MIX clients can join this module with Core 1, but process_mix_message/1
+constructs #mix{} records without an xmlns.  The bundled xmpp codec uses its
+legacy Core 0 default when those records are serialized.  A Core 1-only client
+therefore accepts the join while silently filtering every live channel message.
+
+Build outgoing channel metadata through a small helper that sets
+?NS_MIX_CORE_1 explicitly.  Use it for both the ordinary recipient copy and the
+sender copy carrying submission_id.
+
+This intentionally changes the wire namespace for legacy Core-0-only clients.
+The module does not currently retain each participant's negotiated Core
+revision, so selecting the namespace per recipient would require a larger
+storage and routing change.  Keep that compatibility limitation explicit.
+
+BeagleIM 6.0.1 pins Martin 3.2.4 at
+1d70e9e7eb51a7faa500832be6400a39f86083f7.  That library's MixModule criteria
+and Message.mix accessor both require urn:xmpp:mix:core:1.  Before this change,
+wire traces showed Beagle-originated and browser-originated messages arriving
+at the browser with Core 0, while Beagle displayed neither live message.
+
+Focused EUnit covers ordinary and sender-copy construction: 2 tests, 0
+failures.  The full container image builds on pinned Erlang/OTP 28.5.0.4.  An
+authenticated loopback client then joined factoidal through PAM 2/Core 1, sent
+a unique message, received its immediate server echo with Core 1 metadata, and
+retrieved the same message through MAM with Core 1 metadata.  Finally,
+BeagleIM 6.0.1 and the browser rejoined as distinct accounts and rendered new
+messages immediately in both directions without a reconnect/history fallback.
+---
+ src/mod_mix.erl       | 26 ++++++++++++++++++++++----
+ test/mod_mix_test.erl | 34 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 56 insertions(+), 4 deletions(-)
+ create mode 100644 test/mod_mix_test.erl
+
+diff --git a/src/mod_mix.erl b/src/mod_mix.erl
+index caf107a..421fc43 100644
+--- a/src/mod_mix.erl
++++ b/src/mod_mix.erl
+@@ -41,6 +41,10 @@
+ 	 process_mam_query/1,
+ 	 process_pubsub_query/1]).
+ 
++-ifdef(TEST).
++-export([channel_mix/2, channel_mix/3]).
++-endif.
++
+ -include_lib("xmpp/include/xmpp.hrl").
+ -include("logger.hrl").
+ -include("translate.hrl").
+@@ -513,7 +517,7 @@ process_mix_message(#message{from = From, to = To,
+ 			     Msg#message{from = jid:replace_resource(To, StableID),
+ 					 to = undefined,
+ 					 id = integer_to_binary(MamID)},
+-			     #mix{jid = BFrom, nick = Nick}),
++			     channel_mix(BFrom, Nick)),
+ 		    Msg2 = xmpp:put_meta(Msg1, stanza_id, MamID),
+ 		    case ejabberd_hooks:run_fold(
+ 			   store_mam_message, ServerHost, Msg2,
+@@ -524,9 +528,8 @@ process_mix_message(#message{from = From, to = To,
+ 				      fun(#jid{luser = U, lserver = S})
+ 					    when U == FUser, S == FServer ->
+ 					      xmpp:set_subtag(
+-						Msg1, #mix{jid = BFrom,
+-							   nick = Nick,
+-							   submission_id = SubmissionID});
++						Msg1, channel_mix(BFrom, Nick,
++								  SubmissionID));
+ 					 (_) ->
+ 					      Msg1
+ 				      end);
+@@ -544,6 +547,21 @@ process_mix_message(#message{from = From, to = To,
+ 	    ejabberd_router:route_error(Msg, db_error(Msg))
+     end.
+ 
++%% The xmpp codec's empty #mix.xmlns compatibility default serializes as
++%% MIX Core 0.  Modern Core 1 clients (including BeagleIM 6.0.1) filter those
++%% messages out after joining with Core 1, so channel traffic must declare the
++%% current namespace explicitly.  This intentionally changes the wire format
++%% for legacy Core 0-only clients; the server cannot currently retain each
++%% participant's negotiated Core revision and choose a namespace per recipient.
++-spec channel_mix(jid(), binary()) -> mix().
++channel_mix(From, Nick) ->
++    #mix{xmlns = ?NS_MIX_CORE_1, jid = From, nick = Nick}.
++
++-spec channel_mix(jid(), binary(), binary()) -> mix().
++channel_mix(From, Nick, SubmissionID) ->
++    #mix{xmlns = ?NS_MIX_CORE_1, jid = From, nick = Nick,
++	 submission_id = SubmissionID}.
++
+ -spec process_participants_list(iq()) -> iq().
+ process_participants_list(#iq{from = From, to = To} = IQ) ->
+     {Chan, Host, _} = jid:tolower(To),
+diff --git a/test/mod_mix_test.erl b/test/mod_mix_test.erl
+new file mode 100644
+index 0000000..b44c076
+--- /dev/null
++++ b/test/mod_mix_test.erl
+@@ -0,0 +1,34 @@
++%%%-------------------------------------------------------------------
++%%% Regression tests for the MIX namespace emitted on channel messages.
++%%%
++%%% Copyright (C) 2026 Dan Brickley
++%%%
++%%% This program is free software; you can redistribute it and/or
++%%% modify it under the terms of the GNU General Public License as
++%%% published by the Free Software Foundation; either version 2 of the
++%%% License, or (at your option) any later version.
++%%%
++%%% This program is distributed in the hope that it will be useful,
++%%% but WITHOUT ANY WARRANTY; without even the implied warranty of
++%%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++%%% General Public License for more details.
++%%%-------------------------------------------------------------------
++-module(mod_mix_test).
++
++-include_lib("eunit/include/eunit.hrl").
++-include_lib("xmpp/include/xmpp.hrl").
++
++channel_mix_uses_core_1_test() ->
++    From = jid:make(<<"alice">>, <<"example.test">>),
++    ?assertMatch(#mix{xmlns = ?NS_MIX_CORE_1,
++                     jid = From,
++                     nick = <<"Alice">>},
++                 mod_mix:channel_mix(From, <<"Alice">>)).
++
++sender_channel_mix_preserves_submission_id_test() ->
++    From = jid:make(<<"alice">>, <<"example.test">>),
++    ?assertMatch(#mix{xmlns = ?NS_MIX_CORE_1,
++                     jid = From,
++                     nick = <<"Alice">>,
++                     submission_id = <<"submission-1">>},
++                 mod_mix:channel_mix(From, <<"Alice">>, <<"submission-1">>)).
+-- 
+2.50.1 (Apple Git-155)
+

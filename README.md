@@ -3,6 +3,22 @@
 GPL-2.0-compatible modernization patches and interoperability checks for
 ejabberd's experimental MIX implementation.
 
+## Patch acceptance rule
+
+**No patch enters `patches/series` until a reader can tell, without reconstructing
+the investigation, what it changes, which observed failure it fixes, why the
+protocol permits or requires the change, and how it can affect interoperability
+with existing deployments.**
+
+Every patch must follow [PATCH_POLICY.md](PATCH_POLICY.md). In particular, its
+commit message and accompanying notes must cover the problem and evidence, the
+exact behavior change, protocol basis, compatibility with the status quo,
+interoperability and operational risks, and verification. Non-obvious protocol
+decisions must also have concise comments beside the relevant source code.
+
+See [TODO.md](TODO.md) for the work queue. The documentation and compatibility
+review there are release gates, not cleanup to defer until after implementation.
+
 ## Scope
 
 This repository is intentionally separate from the Apache-2.0
@@ -17,19 +33,28 @@ server-neutral protocol tests upstream in `foafmixer-mix`.
 
 ## Status
 
-`patches/0001-mix-core-1-info-node.patch` is the first narrow correction. It
-preserves the required `urn:xmpp:mix:pam:2` namespace in `client-join`
-responses, updates the module's declared XEP revision to MIX-CORE 0.14.6, and
-implements the mandatory `urn:xmpp:mix:nodes:info` retrieval/subscription path
-that the existing module omitted. It is not a claim of complete MIX support.
+Three narrow corrections are under test:
+
+1. `0001` preserves PAM 2 responses and implements the missing Core 1
+   information-node path.
+2. `0002` recognizes the locally constructed, Core 0, and Core 1 MIX metadata
+   forms when the participant server routes live messages.
+3. `0003` emits Core 1 metadata explicitly instead of allowing the codec's Core
+   0 default to make BeagleIM 6.0.1 discard live messages.
+
+Together they now support immediate two-way messages between BeagleIM 6.0.1
+and the browser pilot. They are not a claim of complete MIX support, and `0002`
+and `0003` remain outside `patches/series` while their remaining compatibility
+matrix is completed.
 
 The test sequence is:
 
 1. build a custom ejabberd 26.07 image with the patch;
 2. run it on separate local ports and a separate Podman volume;
-3. create and join a channel with BeagleIM 6.0.1;
+3. create and join a channel with BeagleIM 6.0.1 and the browser client;
 4. retrieve participants and channel information; and
-5. exchange a groupchat message between two pilot accounts.
+5. exchange and render live groupchat messages in both directions between two
+   pilot accounts, without reconnecting into MAM history.
 
 The existing live pilot is not replaced until that sequence succeeds.
 
