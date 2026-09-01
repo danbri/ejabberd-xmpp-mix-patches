@@ -43,26 +43,51 @@ Three narrow corrections are under test:
    0 default to make BeagleIM 6.0.1 discard live messages.
 
 Together they now support immediate two-way messages between BeagleIM 6.0.1
-and the browser pilot. They are not a claim of complete MIX support, and `0002`
-and `0003` remain outside `patches/series` while their remaining compatibility
-matrix is completed.
+and the browser pilot. After the default-port cutover, one browser submission
+also appeared immediately in both BeagleIM on macOS and Siskin IM on iOS. They
+are not a claim of complete MIX support, and `0002` and `0003` remain outside
+`patches/series` while their remaining compatibility matrix is completed.
 
 The test sequence is:
 
-1. build a custom ejabberd 26.07 image with the patch;
-2. run it on separate local ports and a separate Podman volume;
+1. build a custom ejabberd 26.07 image from the pinned commit and ordered
+   reviewer patch list;
+2. run it on loopback with a dedicated Docker or Podman volume;
 3. create and join a channel with BeagleIM 6.0.1 and the browser client;
 4. retrieve participants and channel information; and
 5. exchange and render live groupchat messages in both directions between two
    pilot accounts, without reconnecting into MAM history.
 
-The existing live pilot is not replaced until that sequence succeeds.
+That sequence has passed for the current three-patch reviewer stack. The same
+image now backs the private pilot on its normal client ports.
+
+## Local Docker or Podman review
+
+The repository includes a repeatable, pinned-source local container workflow.
+It clones the exact upstream commit into a temporary build directory, applies
+`patches/reviewer-series`, and invokes upstream's own Dockerfile:
+
+```sh
+make image
+make up
+make register
+```
+
+See [docs/local-container-review.md](docs/local-container-review.md) for ports,
+engine selection, lifecycle, provenance, and security boundaries.
+
+The repository and image build context contain no live deployment account
+names, JIDs, passwords, transcripts, or database state. The generic container
+configuration declares no users; reviewer accounts are entered interactively
+at runtime and persist only in the local named volume.
 
 ## Layout
 
 ```
 patches/       Ordered patches for the pinned upstream source
 docs/          Reproducible compatibility notes and protocol observations
+docker/        Generic loopback-only reviewer configuration and Compose file
+tools/         Pinned image builder and local lifecycle helper
 ```
 
 See [UPSTREAM.md](UPSTREAM.md) for the exact source baseline and how to apply

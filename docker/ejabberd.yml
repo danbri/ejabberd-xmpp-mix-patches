@@ -1,0 +1,54 @@
+### Local-only configuration for reviewing the downstream MIX patch stack.
+###
+### The container runner binds both exposed ports to loopback. This file
+### declares no accounts or credentials; create reviewer accounts at runtime.
+
+define_macro:
+  HOST: localhost
+
+hosts:
+  - HOST
+
+loglevel: info
+
+listen:
+  -
+    port: 5222
+    ip: "0.0.0.0"
+    module: ejabberd_c2s
+    starttls: false
+  -
+    port: 5281
+    ip: "0.0.0.0"
+    module: ejabberd_http
+    request_handlers:
+      "/xmpp": ejabberd_http_ws
+
+auth_method: internal
+
+api_permissions:
+  "Local review console":
+    from: ejabberd_ctl
+    who: all
+    what: "*"
+
+modules:
+  mod_adhoc: {}
+  mod_caps: {}
+  mod_disco: {}
+  mod_mam:
+    # mod_mix publishes through the MAM hook; enable storage so live delivery
+    # and archive retrieval can be checked independently.
+    default: always
+  mod_mix:
+    hosts:
+      - "mix.@HOST@"
+  mod_mix_pam: {}
+  mod_ping: {}
+  # PAM joins maintain the local channel mapping as a roster item.
+  mod_roster: {}
+  mod_pubsub:
+    access_createnode: all
+    plugins:
+      - "flat"
+      - "pep"

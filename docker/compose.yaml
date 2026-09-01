@@ -1,0 +1,17 @@
+services:
+  ejabberd:
+    image: ${MIX_IMAGE:-localhost/foafmixer/ejabberd-mix:26.07-pilot}
+    container_name: ${MIX_CONTAINER:-ejabberd-mix-review}
+    restart: unless-stopped
+    environment:
+      EJABBERD_MACRO_HOST: ${MIX_DOMAIN:-localhost}
+    ports:
+      - "${MIX_BIND_ADDRESS:-127.0.0.1}:${MIX_C2S_PORT:-5222}:5222"
+      - "${MIX_BIND_ADDRESS:-127.0.0.1}:${MIX_WEBSOCKET_PORT:-5281}:5281"
+    volumes:
+      - ejabberd-mix-review-state:/opt/ejabberd
+      - ./ejabberd.yml:/opt/ejabberd/conf/ejabberd.yml:ro
+
+volumes:
+  ejabberd-mix-review-state:
+    name: ${MIX_VOLUME:-ejabberd-mix-review-state}

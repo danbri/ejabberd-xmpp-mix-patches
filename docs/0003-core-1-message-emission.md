@@ -4,11 +4,11 @@ Status: downstream candidate; deliberately not yet in `patches/series`.
 
 ## Observed failure
 
-With patches 0001 and 0002, BeagleIM 6.0.1 could discover and join
-`factoidal@mix.foafmixer.test`. Live routing also worked: a message sent by
-Beagle arrived immediately in the connected browser, and a browser submission
-received its server echo. Nevertheless, Beagle showed no new live messages and
-only exposed older content after a history/rejoin path.
+With patches 0001 and 0002, BeagleIM 6.0.1 could discover and join the test
+channel. Live routing also worked: a message sent by Beagle arrived immediately
+in the connected browser, and a browser submission received its server echo.
+Nevertheless, Beagle showed no new live messages and only exposed older content
+after a history/rejoin path.
 
 The server trace isolated the protocol boundary. It reflected otherwise valid
 groupchat messages with:
@@ -90,6 +90,13 @@ database state.
 - Named-client test: BeagleIM 6.0.1 and the browser rejoined as distinct
   accounts and rendered new messages immediately in both directions without a
   reconnect/history fallback.
+- Default-port fan-out test: one fresh browser submission appeared immediately
+  in both BeagleIM on macOS and Siskin IM on iOS. The Siskin build number still
+  needs to be recorded before treating it as versioned acceptance evidence.
+
+OMEMO remained disabled during these tests. End-to-end encryption is a
+separate client and device-state interoperability layer; these results isolate
+MIX routing and Core 1 metadata behavior.
 
 Remaining before series/upstream consideration: exact multi-resource fan-out,
 negative no-mapping delivery, and an end-to-end legacy Core 0 client/probe.

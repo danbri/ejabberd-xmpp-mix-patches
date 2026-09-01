@@ -52,6 +52,11 @@ investigation note.
 - Do not submit upstream merely because a downstream patch works. Upstream
   submission is a separate decision after the patch record and interoperability
   matrix are complete.
+- Keep live deployment identity and state out of review artifacts. Patch files,
+  tests, Docker/Compose files, documentation, and build contexts must not carry
+  account names, JIDs, credentials, transcripts, password hashes, or database
+  exports from a running pilot. Synthetic source-level fixtures must be plainly
+  non-live and contain no reusable secret.
 
 ## Commit-message template
 

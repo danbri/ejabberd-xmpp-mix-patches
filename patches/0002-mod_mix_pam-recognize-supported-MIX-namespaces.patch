@@ -25,7 +25,7 @@ The patch activates the existing all-active-resources delivery path for explicit
 
 Verification:
 
-Focused EUnit on Erlang/OTP 29.0.5 accepts the local empty representation, Core:0 and populated Core:1; rejects an unknown MIX namespace and a non-MIX subtag; 5 tests, 0 failures. The complete image builds on pinned Erlang/OTP 28.5.0.4. An authenticated loopback client joined through PAM, received its unique message live, and recovered it through channel MAM. A Tailnet WebSocket browser joined, sent livefix-browser-1, and displayed the server echo immediately. A distinct BeagleIM 6.0.1 account sent bloop and the browser received it live. Reverse visible delivery in BeagleIM, exact multi-resource delivery count, no-mapping rejection, and a wire-level Core:0 proof remain tracked before upstream consideration.
+Focused EUnit on Erlang/OTP 29.0.5 accepts the local empty representation, Core:0 and populated Core:1; rejects an unknown MIX namespace and a non-MIX subtag; 5 tests, 0 failures. The complete image builds on pinned Erlang/OTP 28.5.0.4. An authenticated loopback client joined through PAM, received its unique message live, and recovered it through channel MAM. A Tailnet WebSocket browser displayed the server echo immediately, and a distinct BeagleIM 6.0.1 account delivered a live message to the browser. Exact multi-resource delivery count, no-mapping rejection, and a wire-level Core:0 proof remain tracked before upstream consideration.
 ---
  src/mod_mix_pam.erl       | 15 ++++++++++-
  test/mod_mix_pam_test.erl | 53 +++++++++++++++++++++++++++++++++++++++
@@ -133,4 +133,3 @@ index 0000000..a95f28a
 +    ?assertNot(mod_mix_pam:has_mix_subtag(Msg)).
 -- 
 2.50.1 (Apple Git-155)
-

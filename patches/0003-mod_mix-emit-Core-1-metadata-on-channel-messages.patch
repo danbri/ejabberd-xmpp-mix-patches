@@ -25,7 +25,7 @@ at the browser with Core 0, while Beagle displayed neither live message.
 
 Focused EUnit covers ordinary and sender-copy construction: 2 tests, 0
 failures.  The full container image builds on pinned Erlang/OTP 28.5.0.4.  An
-authenticated loopback client then joined factoidal through PAM 2/Core 1, sent
+authenticated loopback client then joined a test channel through PAM 2/Core 1, sent
 a unique message, received its immediate server echo with Core 1 metadata, and
 retrieved the same message through MAM with Core 1 metadata.  Finally,
 BeagleIM 6.0.1 and the browser rejoined as distinct accounts and rendered new
@@ -136,4 +136,3 @@ index 0000000..b44c076
 +                 mod_mix:channel_mix(From, <<"Alice">>, <<"submission-1">>)).
 -- 
 2.50.1 (Apple Git-155)
-

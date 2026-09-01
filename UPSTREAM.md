@@ -7,13 +7,20 @@ Patch series `26.07` applies to:
 - resolved commit: `413e7faee111028b7630523db82f7812ae285261`
 - XMPP codec dependency: `xmpp` 1.13.4
 
-Apply the series in a clean upstream checkout:
+Apply only the acceptance-gated series in a clean upstream checkout:
 
 ```sh
 git clone --branch 26.07 https://github.com/processone/ejabberd.git ejabberd
 cd ejabberd
-git am /path/to/ejabberd-xmpp-mix-patches/patches/*.patch
+while IFS= read -r patch; do
+  git am "/path/to/ejabberd-xmpp-mix-patches/patches/$patch"
+done < /path/to/ejabberd-xmpp-mix-patches/patches/series
 ```
+
+The local container workflow intentionally uses `patches/reviewer-series`,
+which also includes downstream candidates that have not passed every upstream
+acceptance gate. Keeping the two lists distinct prevents a successful demo
+image from silently promoting a candidate patch.
 
 The patches are GPL-2.0-or-later compatible because they modify GPL-2.0-or-later
 ejabberd source. They do not alter the licence of the separate portable MIX

@@ -13,6 +13,9 @@
       duplication, loss, performance, security, and rollback where relevant.
 - [ ] Add focused positive and negative regression tests.
 - [ ] Complete an end-to-end test against the pinned server and named clients.
+- [ ] Audit the patch, container files, fixtures, and notes for live account
+      names, JIDs, credentials, transcripts, or copied database state; none may
+      enter this repository.
 
 The checklist is defined in detail by [PATCH_POLICY.md](PATCH_POLICY.md). A
 patch is not ready for `patches/series` while any applicable item is unresolved.
@@ -39,6 +42,10 @@ patch is not ready for `patches/series` while any applicable item is unresolved.
       with its legacy Core-0-only client risk stated inline and in the patch.
 - [x] Prove immediate, visible web-to-BeagleIM and BeagleIM-to-web delivery
       between distinct accounts after patch 0003.
+- [x] Prove one fresh browser message fans out live to BeagleIM on macOS and
+      Siskin IM on iOS after promotion to the normal client ports.
+- [ ] Record the exact Siskin IM version and repeat its named-client test for
+      versioned acceptance evidence.
 - [ ] Complete the remaining live-delivery matrix: exact multi-resource copy
       count, no-mapping rejection, and an end-to-end legacy Core 0 check remain.
 - [x] Keep all work downstream for now; do not open an upstream issue or pull

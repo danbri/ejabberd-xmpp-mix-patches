@@ -1,0 +1,5 @@
+# Full downstream stack used by the local interoperability image.
+# `series` remains the acceptance-gated upstream candidate list.
+0001-mix-core-1-info-node.patch
+0002-mod_mix_pam-recognize-supported-MIX-namespaces.patch
+0003-mod_mix-emit-Core-1-metadata-on-channel-messages.patch

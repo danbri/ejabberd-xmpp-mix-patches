@@ -2,11 +2,10 @@
 
 Date: 2026-09-01
 
-Status: corrected candidate built and unit-tested; authenticated loopback and
-Tailnet browser clients have passed sender live delivery on OTP 28.5. A
-BeagleIM account also delivered a message live to the browser. Reverse visible
-delivery in BeagleIM and the remaining boundary tests are still pending before
-inclusion in `patches/series`.
+Status: corrected candidate built and unit-tested; authenticated loopback,
+Tailnet browser, and BeagleIM clients have passed immediate two-way delivery on
+OTP 28.5. The remaining boundary tests are still pending before inclusion in
+`patches/series`.
 
 ## Scope and pinned versions
 
@@ -23,10 +22,10 @@ not a claim that MIX is production-stable.
 
 ## Observed problem
 
-A client could authenticate, create `factoidal@mix.foafmixer.test`, join it via
-MIX-PAM, and send a groupchat message. The channel archived the message, so it
-became visible after a client resynchronized or rejoined, but neither the sender
-nor another online participant received the message live.
+A client could authenticate, create a channel, join it via MIX-PAM, and send a
+groupchat message. The channel archived the message, so it became visible after
+a client resynchronized or rejoined, but neither the sender nor another online
+participant received the message live.
 
 This separated history success from live-delivery failure: channel acceptance
 and channel MAM storage worked, while participant-server forwarding did not.
@@ -55,9 +54,9 @@ The following were observed against the isolated patched-test server:
 4. With an explicitly namespaced MIX record, the participant-server hook
    returned its original `bounce` accumulator rather than the `pass` result
    used after successful forwarding.
-5. A direct lookup using the exact message `to` and `from` JIDs returned the
-   stored MIX-PAM channel mapping. Argument order and the loaded BEAM code were
-   also checked, excluding a missing mapping or stale module.
+5. A direct lookup using the exact message addresses returned the stored
+   MIX-PAM channel mapping. Argument order and the loaded BEAM code were also
+   checked, excluding a missing mapping or stale module.
 6. For the decoded message record, the runtime predicates returned:
 
    ```erlang
@@ -176,7 +175,7 @@ record behavior while removing explicit-namespace support.
 
 These were useful leads but do not explain the server hook's proven bounce:
 
-- the unregistered `foafmixer.test` DNS name;
+- the use of a private, non-DNS pilot domain;
 - Tailscale routing, TLS, or the WebSocket proxy;
 - authentication or account passwords;
 - the browser UI's stale visual connection/join state;
@@ -242,20 +241,20 @@ The complete candidate image also compiled successfully using the repository's
 pinned Erlang/OTP `28.5.0.4` container build.
 
 An authenticated plaintext-loopback client then connected to the isolated
-server, bound a resource, joined `factoidal@mix.foafmixer.test` through
-MIX-PAM, sent a unique `livefix-auto-*` message, and received the reflected
-channel message immediately without reconnecting. It then queried the channel
-through MAM with an RSM newest-page request and recovered that same message,
-including the expected MAM, forwarding, delay, and MIX Core 1 namespaces. This
-proves the corrected candidate preserves the local in-memory representation
-through live routing without breaking channel archive retrieval.
+server, bound a resource, joined a test channel through MIX-PAM, sent a unique
+probe message, and received the reflected channel message immediately without
+reconnecting. It then queried the channel through MAM with an RSM newest-page
+request and recovered that same message, including the expected MAM,
+forwarding, delay, and MIX Core 1 namespaces. This proves the corrected
+candidate preserves the local in-memory representation through live routing
+without breaking channel archive retrieval.
 
-The browser client then connected over Tailnet WebSocket to the same isolated
-server on port 15281, joined through PAM, sent `livefix-browser-1`, and displayed
-the server-delivered echo immediately in its Live Messages pane. No reconnect
-or history reload was needed.
+The browser client then connected over a temporary Tailnet WebSocket endpoint
+to the same isolated server, joined through PAM, sent a unique probe, and
+displayed the server-delivered echo immediately in its Live Messages pane. No
+reconnect or history reload was needed.
 
-Finally, BeagleIM 6.0.1 sent `bloop` as a different account and the connected
+Finally, BeagleIM 6.0.1 sent a probe as a different account and the connected
 browser displayed it live. BeagleIM did not display its own message in its
 conversation pane while the server emitted Core 0 metadata. Candidate patch
 0003 changed that output separately. With patches 0001-0003, BeagleIM 6.0.1
