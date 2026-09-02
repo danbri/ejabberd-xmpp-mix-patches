@@ -60,7 +60,6 @@ container_exists() {
 }
 
 wait_ready() {
-  local attempt
   for _ in $(seq 1 30); do
     if "$engine" exec "$container" ejabberdctl status >/dev/null 2>&1; then
       "$engine" exec "$container" ejabberdctl status
