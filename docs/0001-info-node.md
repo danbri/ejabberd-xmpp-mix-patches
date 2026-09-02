@@ -23,6 +23,13 @@ the client's PAM namespace through to the result.
 - EUnit `test/mod_mix_info_test.erl`: 5 tests, 0 failures (Erlang/OTP 29,
   and OTP 28 in CI).
 - Clean application on the pinned upstream commit (CI, `git am`).
-- Raw loopback probe (`tools/mix-probe.py`): pending for this revision; the
-  record is appended below when it runs against the container image built
-  from the current `reviewer-series`.
+- Raw loopback probe (`tools/mix-probe.py`), 2026-09-02, against the image
+  built from `reviewer-series` at this revision (upstream 413e7fa, Erlang/OTP
+  28.5.0.4 in the container): all 9 checks pass, including the pre-join info
+  read on a non-hidden channel, the `urn:xmpp:mix:pam:2` client-join result
+  listing the info node, and the form fields FORM_TYPE, Name, Contact. The
+  same probe against the image built from the previous 0001 revision fails
+  at the pre-join info read, as expected.
+- Not yet re-run for this revision: BeagleIM 6.0.1 join and info display.
+  The earlier revision passed that check; the wire format of the join and
+  echo is unchanged by this revision, only the info form and its access.
