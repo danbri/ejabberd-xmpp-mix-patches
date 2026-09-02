@@ -55,6 +55,12 @@ patch is not ready for `patches/series` while any applicable item is unresolved.
       between distinct accounts after patch 0003.
 - [x] Prove one fresh browser message fans out live to BeagleIM on macOS and
       Siskin IM on iOS after promotion to the normal client ports.
+- [ ] Wire trace 2026-09-02: the sender echo serializes
+      `<submission-id xmlns="urn:xmpp:mix:core:0">` inside a
+      `<mix xmlns="urn:xmpp:mix:core:1">` element. The bundled xmpp codec
+      1.13.4 appears to define submission-id only for Core 0. Check whether
+      Martin/BeagleIM reads submission-id with a namespace check, and whether
+      the codec or patch 0003 should emit it in Core 1.
 - [ ] Record the exact Siskin IM version and repeat its named-client test for
       versioned acceptance evidence.
 - [ ] Complete the remaining live-delivery matrix: exact multi-resource copy
