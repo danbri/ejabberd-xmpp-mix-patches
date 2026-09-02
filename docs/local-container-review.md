@@ -36,6 +36,13 @@ Plaintext C2S is safe here only because the runner rejects non-loopback binds by
 default. Do not opt into a non-loopback bind without adding transport security
 and reviewing authentication exposure.
 
+`make probe` runs `tools/mix-probe.py` against the review server with an
+account you created through `make register`. It checks the nine behaviours
+the patch series is responsible for (PAM 2 and Core 1 advertisement, channel
+create, pre-join info read, PAM join namespace and node list, info form
+fields, Core 1 echo with submission id, MAM, leave and destroy) and creates
+and destroys its own throwaway channel.
+
 Useful lifecycle commands:
 
 ```sh

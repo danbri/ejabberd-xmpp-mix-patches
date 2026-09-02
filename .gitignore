@@ -3,3 +3,4 @@ docker/.env
 *.tar
 *.tar.gz
 state/
+__pycache__/
