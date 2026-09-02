@@ -1,4 +1,4 @@
-From 4b96f51d031bab456cff62d1a8b6876fa9304742 Mon Sep 17 00:00:00 2001
+From b13d1fb71e501b09ee88c05d24d4c3f415e2d6a9 Mon Sep 17 00:00:00 2001
 From: Dan Brickley <danbri@danbri.org>
 Date: Tue, 1 Sep 2026 13:58:49 +0100
 Subject: [PATCH] mod_mix_pam: recognize supported MIX namespaces
@@ -33,7 +33,7 @@ Focused EUnit on Erlang/OTP 29.0.5 accepts the local empty representation, Core:
  create mode 100644 test/mod_mix_pam_test.erl
 
 diff --git a/src/mod_mix_pam.erl b/src/mod_mix_pam.erl
-index 96f8eac..50f2682 100644
+index 4184512..f7e5f4e 100644
 --- a/src/mod_mix_pam.erl
 +++ b/src/mod_mix_pam.erl
 @@ -36,6 +36,10 @@
@@ -131,5 +131,3 @@ index 0000000..a95f28a
 +non_mix_subtag_test() ->
 +    Msg = #message{sub_els = [#delay{}]},
 +    ?assertNot(mod_mix_pam:has_mix_subtag(Msg)).
--- 
-2.50.1 (Apple Git-155)

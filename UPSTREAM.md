@@ -33,9 +33,11 @@ The 26.07 image is current, and its bundled `xmpp` codec already recognises
 negotiated `messages` and `participants` subscriptions, and rejected retrieval
 of the standard `info` node. It also rebuilt the PAM `client-join` response
 with the core namespace, rather than preserving `urn:xmpp:mix:pam:2`.
-Both behaviours were reported upstream in
-[ejabberd issue #4006](https://github.com/processone/ejabberd/issues/4006).
-Current XEP-0369 0.14.6 documents `info` in normal join and discovery flows.
+Both behaviours match the 2023 report in
+[ejabberd issue 4006](https://github.com/processone/ejabberd/issues/4006),
+which its reporter closed without a fix; this series has not yet been
+reported or submitted upstream. XEP-0369 version 0.14.6 documents `info` in
+the join and discovery flows.
 
 The patch series records only observed, testable corrections. Do not advertise
 features merely because a namespace can be decoded.

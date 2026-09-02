@@ -1,57 +1,85 @@
-From 69da0ed7a16965ce24ba5fbf005b3502ad9cf705 Mon Sep 17 00:00:00 2001
+From ebb9a96f2ba50069c812267a33dd606e1fa2bebd Mon Sep 17 00:00:00 2001
 From: Dan Brickley <danbri@danbri.org>
 Date: Tue, 1 Sep 2026 16:16:17 +0100
 Subject: [PATCH] mod_mix: emit Core 1 metadata on channel messages
 
+Problem and evidence:
+
 MIX clients can join this module with Core 1, but process_mix_message/1
-constructs #mix{} records without an xmlns.  The bundled xmpp codec uses its
-legacy Core 0 default when those records are serialized.  A Core 1-only client
-therefore accepts the join while silently filtering every live channel message.
+constructs #mix{} records without an xmlns. The bundled xmpp codec 1.13.4
+uses its legacy Core 0 default when those records are serialized, so live
+channel messages carry <mix xmlns='urn:xmpp:mix:core:0'>. BeagleIM 6.0.1
+(build 196) pins Martin 3.2.4 at 1d70e9e7eb51a7faa500832be6400a39f86083f7;
+that library's MixModule criteria and Message.mix accessor both require
+urn:xmpp:mix:core:1. Wire traces showed Beagle-originated and
+browser-originated messages arriving at the browser with Core 0 while
+Beagle displayed neither live message, although the same content was
+retrievable through MAM.
 
-Build outgoing channel metadata through a small helper that sets
-?NS_MIX_CORE_1 explicitly.  Use it for both the ordinary recipient copy and the
-sender copy carrying submission_id.
+Protocol expectation:
 
-This intentionally changes the wire namespace for legacy Core-0-only clients.
-The module does not currently retain each participant's negotiated Core
-revision, so selecting the namespace per recipient would require a larger
-storage and routing change.  Keep that compatibility limitation explicit.
+XEP-0369 version 0.14.6 defines Core 1 as urn:xmpp:mix:core:1 and qualifies
+the <mix> metadata on reflected and archived messages with that namespace
+(examples 28 and 29). A service that advertises Core 1 and accepts Core 1
+joins is expected to emit Core 1 metadata.
 
-BeagleIM 6.0.1 pins Martin 3.2.4 at
-1d70e9e7eb51a7faa500832be6400a39f86083f7.  That library's MixModule criteria
-and Message.mix accessor both require urn:xmpp:mix:core:1.  Before this change,
-wire traces showed Beagle-originated and browser-originated messages arriving
-at the browser with Core 0, while Beagle displayed neither live message.
+Change:
 
-Focused EUnit covers ordinary and sender-copy construction: 2 tests, 0
-failures.  The full container image builds on pinned Erlang/OTP 28.5.0.4.  An
-authenticated loopback client then joined a test channel through PAM 2/Core 1, sent
-a unique message, received its immediate server echo with Core 1 metadata, and
-retrieved the same message through MAM with Core 1 metadata.  Finally,
-BeagleIM 6.0.1 and the browser rejoined as distinct accounts and rendered new
-messages immediately in both directions without a reconnect/history fallback.
+Build outgoing channel metadata through channel_mix/2,3, which sets
+xmlns = ?NS_MIX_CORE_1 explicitly. Use it for both the ordinary recipient
+copy and the sender copy that also carries submission_id. No routing,
+membership, archive, fan-out, address, or body logic changes.
+
+Status-quo compatibility:
+
+Before: tolerant clients displayed Core 0 messages; Core 1-only clients
+accepted the join and discarded every live message; MAM still held the
+content. After: Core 1 clients recognize live messages. Join, archive and
+participant handling are unchanged.
+
+Interoperability and operational risks:
+
+This intentionally changes the wire namespace for legacy Core-0-only
+clients, which may now discard messages. The module does not retain each
+participant's negotiated Core revision, so selecting the namespace per
+recipient would need a storage and routing change; that limitation is
+stated beside the helper. Rollback is a single-patch revert with no
+database change. No archive, persistence, or multi-resource effect beyond
+the namespace on the emitted element.
+
+Verification:
+
+EUnit test/mod_mix_test.erl covers ordinary and sender-copy construction:
+2 tests, 0 failures. The container image builds on pinned Erlang/OTP
+28.5.0.4. An authenticated loopback client joined a test channel through
+PAM 2/Core 1, sent a unique message, received its immediate server echo
+with Core 1 metadata, and retrieved the same message through MAM with Core
+1 metadata. BeagleIM 6.0.1 and the browser client rejoined as distinct
+accounts and rendered new messages immediately in both directions without
+a reconnect or history fallback. One browser submission also appeared
+immediately in Siskin IM on iOS; its exact version is still to be recorded.
+Remaining before series acceptance: multi-resource fan-out count,
+no-mapping rejection, and an end-to-end legacy Core 0 client check.
 ---
- src/mod_mix.erl       | 26 ++++++++++++++++++++++----
+ src/mod_mix.erl       | 24 +++++++++++++++++++-----
  test/mod_mix_test.erl | 34 ++++++++++++++++++++++++++++++++++
- 2 files changed, 56 insertions(+), 4 deletions(-)
+ 2 files changed, 53 insertions(+), 5 deletions(-)
  create mode 100644 test/mod_mix_test.erl
 
 diff --git a/src/mod_mix.erl b/src/mod_mix.erl
-index caf107a..421fc43 100644
+index fdef3c3..7b42e86 100644
 --- a/src/mod_mix.erl
 +++ b/src/mod_mix.erl
-@@ -41,6 +41,10 @@
- 	 process_mam_query/1,
+@@ -42,7 +42,7 @@
  	 process_pubsub_query/1]).
  
-+-ifdef(TEST).
-+-export([channel_mix/2, channel_mix/3]).
-+-endif.
-+
+ -ifdef(TEST).
+--export([info_node_form/2, known_nodes/0]).
++-export([info_node_form/2, known_nodes/0, channel_mix/2, channel_mix/3]).
+ -endif.
+ 
  -include_lib("xmpp/include/xmpp.hrl").
- -include("logger.hrl").
- -include("translate.hrl").
-@@ -513,7 +517,7 @@ process_mix_message(#message{from = From, to = To,
+@@ -517,7 +517,7 @@ process_mix_message(#message{from = From, to = To,
  			     Msg#message{from = jid:replace_resource(To, StableID),
  					 to = undefined,
  					 id = integer_to_binary(MamID)},
@@ -60,7 +88,7 @@ index caf107a..421fc43 100644
  		    Msg2 = xmpp:put_meta(Msg1, stanza_id, MamID),
  		    case ejabberd_hooks:run_fold(
  			   store_mam_message, ServerHost, Msg2,
-@@ -524,9 +528,8 @@ process_mix_message(#message{from = From, to = To,
+@@ -528,9 +528,8 @@ process_mix_message(#message{from = From, to = To,
  				      fun(#jid{luser = U, lserver = S})
  					    when U == FUser, S == FServer ->
  					      xmpp:set_subtag(
@@ -72,7 +100,7 @@ index caf107a..421fc43 100644
  					 (_) ->
  					      Msg1
  				      end);
-@@ -544,6 +547,21 @@ process_mix_message(#message{from = From, to = To,
+@@ -548,6 +547,21 @@ process_mix_message(#message{from = From, to = To,
  	    ejabberd_router:route_error(Msg, db_error(Msg))
      end.
  
@@ -134,5 +162,3 @@ index 0000000..b44c076
 +                     nick = <<"Alice">>,
 +                     submission_id = <<"submission-1">>},
 +                 mod_mix:channel_mix(From, <<"Alice">>, <<"submission-1">>)).
--- 
-2.50.1 (Apple Git-155)

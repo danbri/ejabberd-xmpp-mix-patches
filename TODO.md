@@ -20,6 +20,17 @@
 The checklist is defined in detail by [PATCH_POLICY.md](PATCH_POLICY.md). A
 patch is not ready for `patches/series` while any applicable item is unresolved.
 
+## Patch 0001 (information node and PAM namespace)
+
+- [x] Patch record rewritten under the PATCH_POLICY headings.
+- [x] Info node readable during discovery on non-hidden channels; hidden
+      channels answer participants only.
+- [x] Form carries FORM_TYPE, Name and Contact; Description omitted because
+      `mod_mix` stores none.
+- [x] EUnit `mod_mix_info_test`: 5 tests, 0 failures.
+- [ ] Decide whether to add a stored channel description so the form can
+      carry the XEP-0369 Description field.
+
 ## Current live-delivery investigation
 
 - [x] Package the MIX namespace recognition fix as a narrow candidate patch that preserves
@@ -50,3 +61,6 @@ patch is not ready for `patches/series` while any applicable item is unresolved.
       count, no-mapping rejection, and an end-to-end legacy Core 0 check remain.
 - [x] Keep all work downstream for now; do not open an upstream issue or pull
       request without a separate decision.
+- [x] CI: apply both series on the pinned commit, check policy headings on
+      accepted patches, build and run the patch EUnit modules, ShellCheck the
+      tooling.

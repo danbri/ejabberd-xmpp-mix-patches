@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  UPSTREAM_URL: https://github.com/processone/ejabberd.git
+  UPSTREAM_COMMIT: 413e7faee111028b7630523db82f7812ae285261
+
+jobs:
+  apply:
+    name: Apply patch series to pinned upstream
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned upstream commit
+        run: |
+          git init -q ejabberd
+          git -C ejabberd remote add origin "$UPSTREAM_URL"
+          git -C ejabberd fetch -q --depth=1 origin "$UPSTREAM_COMMIT"
+          git -C ejabberd checkout -q --detach FETCH_HEAD
+          test "$(git -C ejabberd rev-parse HEAD)" = "$UPSTREAM_COMMIT"
+      - name: Accepted series applies with git apply --check
+        run: |
+          while IFS= read -r p; do
+            case "$p" in ''|'#'*) continue ;; esac
+            git -C ejabberd apply --check "$GITHUB_WORKSPACE/patches/$p"
+            git -C ejabberd apply "$GITHUB_WORKSPACE/patches/$p"
+          done < patches/series
+          git -C ejabberd checkout -q -- . && git -C ejabberd clean -qfd
+      - name: Reviewer series applies with git am
+        run: |
+          git -C ejabberd config user.name ci
+          git -C ejabberd config user.email ci@invalid
+          while IFS= read -r p; do
+            case "$p" in ''|'#'*) continue ;; esac
+            git -C ejabberd am -q --committer-date-is-author-date "$GITHUB_WORKSPACE/patches/$p"
+          done < patches/reviewer-series
+          git -C ejabberd log --oneline "$UPSTREAM_COMMIT"..HEAD
+      - name: Patch records follow PATCH_POLICY headings
+        run: |
+          status=0
+          while IFS= read -r p; do
+            case "$p" in ''|'#'*) continue ;; esac
+            for h in 'Problem and evidence:' 'Protocol expectation:' 'Change:' 'Status-quo compatibility:' 'Interoperability and operational risks:' 'Verification:'; do
+              grep -q "^$h" "patches/$p" || { echo "$p: missing '$h'"; status=1; }
+            done
+          done < patches/series
+          exit $status
+      - name: Save patched tree
+        run: tar -cf /tmp/patched.tar ejabberd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patched-tree
+          path: /tmp/patched.tar
+          retention-days: 1
+
+  eunit:
+    name: EUnit for patched MIX modules
+    needs: apply
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        otp: ['28']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: patched-tree
+      - run: tar -xf patched.tar
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          rebar3-version: '3.24.0'
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libexpat1-dev libgd-dev libpam0g-dev libsqlite3-dev libwebp-dev libyaml-dev
+      - name: Cache rebar3 and compiled deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/rebar3/
+            ejabberd/_build/default/lib/
+          key: eunit-${{ matrix.otp }}-${{ env.UPSTREAM_COMMIT }}-${{ hashFiles('ejabberd/rebar.*') }}
+      - name: Configure and compile
+        working-directory: ejabberd
+        run: |
+          ./autogen.sh
+          ./configure --with-rebar=rebar3 --disable-elixir
+          make
+      - name: EUnit for the patched modules
+        working-directory: ejabberd
+        run: rebar3 eunit --module=mod_mix_info_test,mod_mix_pam_test,mod_mix_test
+
+  shellcheck:
+    name: ShellCheck the tooling
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y shellcheck
+      - run: shellcheck tools/*.sh

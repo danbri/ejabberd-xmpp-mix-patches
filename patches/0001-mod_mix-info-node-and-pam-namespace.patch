@@ -1,0 +1,292 @@
+From 7d5c8bfb84121003071f5d70d3dd74ac3cf072f1 Mon Sep 17 00:00:00 2001
+From: Dan Brickley <danbri@danbri.org>
+Date: Wed, 2 Sep 2026 13:52:27 +0100
+Subject: [PATCH] mod_mix: serve the MIX information node and preserve the PAM
+ namespace
+
+Problem and evidence:
+
+Two gaps were observed against ejabberd 26.07 (commit 413e7fa) with the
+bundled xmpp codec 1.13.4. First, mod_mix negotiated only the messages and
+participants nodes and answered a PubSub items request for
+urn:xmpp:mix:nodes:info with feature-not-implemented, although current
+clients request the info node during join and read it during discovery.
+Second, mod_mix_pam built the client-join result with the namespace taken
+from the channel's inner join reply (urn:xmpp:mix:core:1) instead of the
+namespace of the client's own request (urn:xmpp:mix:pam:2). Both were
+reproduced with a raw loopback client and match the report in ejabberd
+issue 4006, which its reporter closed in 2023 without a fix.
+
+Protocol expectation:
+
+XEP-0369 version 0.14.6 section 6.1 lists urn:xmpp:mix:nodes:info as a
+standard node, shows it being read through PubSub during channel discovery
+before a join, and shows it in the join subscription list. Its item is an
+XEP-0004 form with FORM_TYPE urn:xmpp:mix:core:1 and Name, Description and
+Contact fields. XEP-0405 requires the client-join result to be in the
+urn:xmpp:mix:pam:2 namespace the client used.
+
+Change:
+
+- Add urn:xmpp:mix:nodes:info to known_nodes/0, so a join that asks for it
+  receives it in the negotiated subscription list.
+- Answer a PubSub items request for the info node with one item, id
+  "current", holding the form built by info_node_form/2. The form carries
+  FORM_TYPE, Name (the channel localpart) and Contact (the channel creator).
+  Description is omitted because this module stores no description.
+- A channel that is not hidden answers any requester, as in the discovery
+  flow. A hidden channel answers only participants, matching the way the
+  hidden flag already restricts disco#items. Unknown channels and database
+  failures return the same errors as the participants node.
+- mod_mix_pam threads the client's PAM namespace through to the result
+  instead of reusing the channel reply's namespace.
+- No change to the -protocol attribute, channel creation, messages,
+  participants, MAM, or routing.
+
+Status-quo compatibility:
+
+Before: info-node requests failed with feature-not-implemented and a join
+requesting the info node was silently narrowed to messages and participants;
+the client-join result carried urn:xmpp:mix:core:1. After: the info node is
+served and negotiated and the result carries urn:xmpp:mix:pam:2. Joins that
+never mention the info node, and every other node, behave as before.
+
+Interoperability and operational risks:
+
+Clients that never request the info node see no change. A client that
+compared the client-join result namespace against urn:xmpp:mix:core:1
+would now fail, but XEP-0405 does not permit that expectation and no such
+client is known. The info node exposes the creator's bare JID to any user
+who can already discover the channel; hidden channels are unchanged in
+visibility. No archive, persistence, multi-resource, or routing effect.
+Rollback is a single-patch revert with no database migration.
+
+Verification:
+
+EUnit test/mod_mix_info_test.erl: the info node is negotiable, existing
+nodes remain negotiable, the form is typed urn:xmpp:mix:core:1, carries
+Name and a jid-multi Contact, and round-trips through the xmpp codec.
+Result on Erlang/OTP 29: 5 tests, 0 failures. End to end on the loopback
+pilot: BeagleIM 6.0.1 and the browser client joined a channel through PAM
+2/Core 1 with the info node in the subscription list and read it through
+PubSub; the client-join result was verified to carry urn:xmpp:mix:pam:2.
+---
+ src/mod_mix.erl            | 63 +++++++++++++++++++++++++++++++++++++-
+ src/mod_mix_pam.erl        | 17 +++++-----
+ test/mod_mix_info_test.erl | 58 +++++++++++++++++++++++++++++++++++
+ 3 files changed, 130 insertions(+), 8 deletions(-)
+ create mode 100644 test/mod_mix_info_test.erl
+
+diff --git a/src/mod_mix.erl b/src/mod_mix.erl
+index 132682f..fdef3c3 100644
+--- a/src/mod_mix.erl
++++ b/src/mod_mix.erl
+@@ -41,6 +41,10 @@
+ 	 process_mam_query/1,
+ 	 process_pubsub_query/1]).
+ 
++-ifdef(TEST).
++-export([info_node_form/2, known_nodes/0]).
++-endif.
++
+ -include_lib("xmpp/include/xmpp.hrl").
+ -include("logger.hrl").
+ -include("translate.hrl").
+@@ -261,6 +265,10 @@ process_pubsub_query(#iq{type = get,
+ 			 sub_els = [#pubsub{items = #ps_items{node = Node}}]} = IQ)
+   when Node == ?NS_MIX_NODES_PARTICIPANTS ->
+     process_participants_list(IQ);
++process_pubsub_query(#iq{type = get,
++			 sub_els = [#pubsub{items = #ps_items{node = Node}}]} = IQ)
++  when Node == ?NS_MIX_NODES_INFO ->
++    process_info_node(IQ);
+ process_pubsub_query(IQ) ->
+     xmpp:make_error(IQ, unsupported_error(IQ)).
+ 
+@@ -572,6 +580,58 @@ process_participants_list(#iq{from = From, to = To} = IQ) ->
+ 	    xmpp:make_error(IQ, db_error(IQ))
+     end.
+ 
++%% XEP-0369 section 6.1 shows the information node being read during
++%% channel discovery, before a join.  A channel that is not hidden therefore
++%% answers any requester; a hidden channel answers only its participants,
++%% which matches how the hidden flag already restricts disco#items.
++-spec process_info_node(iq()) -> iq().
++process_info_node(#iq{from = From, to = To} = IQ) ->
++    {Chan, Host, _} = jid:tolower(To),
++    ServerHost = ejabberd_router:host_of_route(Host),
++    Mod = gen_mod:db_mod(ServerHost, ?MODULE),
++    case Mod:get_channel(ServerHost, Chan, Host) of
++	{ok, {Creator, Hidden, _Key}} ->
++	    BFrom = jid:remove_resource(From),
++	    Allowed = case Hidden of
++			  false -> ok;
++			  true -> Mod:get_participant(ServerHost, Chan, Host, BFrom)
++		      end,
++	    case Allowed of
++		{error, notfound} ->
++		    xmpp:make_error(IQ, not_joined_error(IQ));
++		{error, db_failure} ->
++		    xmpp:make_error(IQ, db_error(IQ));
++		_ ->
++		    Item = #ps_item{id = <<"current">>,
++				    sub_els = [xmpp:encode(
++						 info_node_form(Chan, Creator))]},
++		    Pubsub = #pubsub{items = #ps_items{
++					       node = ?NS_MIX_NODES_INFO,
++					       items = [Item]}},
++		    xmpp:make_iq_result(IQ, Pubsub)
++	    end;
++	{error, notfound} ->
++	    xmpp:make_error(IQ, no_channel_error(IQ));
++	{error, db_failure} ->
++	    xmpp:make_error(IQ, db_error(IQ))
++    end.
++
++%% The information form defined in XEP-0369 section 6.1.  This module stores
++%% no channel description, so only the fields with stored values are emitted:
++%% Name is the channel localpart and Contact is the channel creator.
++-spec info_node_form(binary(), jid()) -> xdata().
++info_node_form(Chan, Creator) ->
++    #xdata{type = result,
++	   fields = [#xdata_field{type = hidden,
++				  var = <<"FORM_TYPE">>,
++				  values = [?NS_MIX_CORE_1]},
++		     #xdata_field{type = 'text-single',
++				  var = <<"Name">>,
++				  values = [Chan]},
++		     #xdata_field{type = 'jid-multi',
++				  var = <<"Contact">>,
++				  values = [jid:encode(Creator)]}]}.
++
+ -spec items_of_participants([{jid(), binary(), binary()}]) -> [ps_item()].
+ items_of_participants(Participants) ->
+     lists:map(
+@@ -584,7 +644,8 @@ items_of_participants(Participants) ->
+ -spec known_nodes() -> [binary()].
+ known_nodes() ->
+     [?NS_MIX_NODES_MESSAGES,
+-     ?NS_MIX_NODES_PARTICIPANTS].
++     ?NS_MIX_NODES_PARTICIPANTS,
++     ?NS_MIX_NODES_INFO].
+ 
+ -spec filter_nodes([binary()]) -> [binary()].
+ filter_nodes(Nodes) ->
+diff --git a/src/mod_mix_pam.erl b/src/mod_mix_pam.erl
+index 7ea8c5f..4184512 100644
+--- a/src/mod_mix_pam.erl
++++ b/src/mod_mix_pam.erl
+@@ -259,7 +259,8 @@ remove_user(LUser, LServer) ->
+ -spec process_join(iq()) -> ignore.
+ process_join(#iq{from = From, lang = Lang,
+ 		 sub_els = [#mix_client_join{channel = Channel,
+-		                             join = Join}]} = IQ) ->
++		                             join = Join,
++		                             xmlns = PamNs}]} = IQ) ->
+     ejabberd_router:route_iq(
+       #iq{from = jid:remove_resource(From),
+ 	  to = Channel, type = set, sub_els = [Join]},
+@@ -268,7 +269,7 @@ process_join(#iq{from = From, lang = Lang,
+             MixJoin ->
+                 process_join_result(ResIQ#iq {
+                     sub_els = [MixJoin]
+-                }, IQ)
++                }, IQ, PamNs)
+         catch
+             _:{xmpp_codec, Reason} ->
+                 Txt = xmpp:io_format_error(Reason),
+@@ -293,10 +294,10 @@ process_leave(#iq{from = From,
+ 	    xmpp:make_error(IQ, db_error(IQ))
+     end.
+ 
+--spec process_join_result(iq(), iq()) -> ok.
++-spec process_join_result(iq(), iq(), binary()) -> ok.
+ process_join_result(#iq{from = #jid{} = Channel,
+-			type = result, sub_els = [#mix_join{id = ID, xmlns = XmlNs} = Join]},
+-		    #iq{to = To} = IQ) ->
++			type = result, sub_els = [#mix_join{id = ID} = Join]},
++		    #iq{to = To} = IQ, PamNs) ->
+     case add_channel(To, Channel, ID) of
+ 	ok ->
+ 	    % Do roster push
+@@ -311,12 +312,14 @@ process_join_result(#iq{from = #jid{} = Channel,
+ 	    % send IQ result
+ 	    ChanID = make_channel_id(Channel, ID),
+ 	    Join1 = Join#mix_join{id = <<"">>, jid = ChanID},
+-	    ResIQ = xmpp:make_iq_result(IQ, #mix_client_join{join = Join1, xmlns = XmlNs}),
++	    %% XEP-0405: the client-join result carries the PAM namespace the
++	    %% client used, not the Core namespace of the channel's join reply.
++	    ResIQ = xmpp:make_iq_result(IQ, #mix_client_join{join = Join1, xmlns = PamNs}),
+ 	    ejabberd_router:route(ResIQ);
+ 	{error, db_failure} ->
+ 	    ejabberd_router:route_error(IQ, db_error(IQ))
+     end;
+-process_join_result(#iq{type = error} = Err, IQ) ->
++process_join_result(#iq{type = error} = Err, IQ, _PamNs) ->
+     process_iq_error(Err, IQ).
+ 
+ -spec process_leave_result(iq(), iq()) -> ok.
+diff --git a/test/mod_mix_info_test.erl b/test/mod_mix_info_test.erl
+new file mode 100644
+index 0000000..80ea62b
+--- /dev/null
++++ b/test/mod_mix_info_test.erl
+@@ -0,0 +1,58 @@
++%%%-------------------------------------------------------------------
++%%% Regression tests for the MIX information node (XEP-0369 section 6.1).
++%%%
++%%% Copyright (C) 2026 Dan Brickley
++%%%
++%%% This program is free software; you can redistribute it and/or
++%%% modify it under the terms of the GNU General Public License as
++%%% published by the Free Software Foundation; either version 2 of the
++%%% License, or (at your option) any later version.
++%%%
++%%% This program is distributed in the hope that it will be useful,
++%%% but WITHOUT ANY WARRANTY; without even the implied warranty of
++%%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++%%% General Public License for more details.
++%%%
++%%% You should have received a copy of the GNU General Public License along
++%%% with this program; if not, write to the Free Software Foundation, Inc.,
++%%% 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++%%%-------------------------------------------------------------------
++-module(mod_mix_info_test).
++
++-include_lib("eunit/include/eunit.hrl").
++-include_lib("xmpp/include/xmpp.hrl").
++
++info_node_is_negotiable_test() ->
++    ?assert(lists:member(?NS_MIX_NODES_INFO, mod_mix:known_nodes())).
++
++existing_nodes_remain_negotiable_test() ->
++    Nodes = mod_mix:known_nodes(),
++    ?assert(lists:member(?NS_MIX_NODES_MESSAGES, Nodes)),
++    ?assert(lists:member(?NS_MIX_NODES_PARTICIPANTS, Nodes)).
++
++info_form_is_core_1_typed_test() ->
++    Creator = jid:make(<<"alice">>, <<"example.test">>),
++    #xdata{type = result, fields = Fields} =
++        mod_mix:info_node_form(<<"coven">>, Creator),
++    ?assertMatch(#xdata_field{type = hidden, values = [?NS_MIX_CORE_1]},
++                 field(<<"FORM_TYPE">>, Fields)).
++
++info_form_carries_name_and_contact_test() ->
++    Creator = jid:make(<<"alice">>, <<"example.test">>),
++    #xdata{fields = Fields} = mod_mix:info_node_form(<<"coven">>, Creator),
++    ?assertMatch(#xdata_field{values = [<<"coven">>]},
++                 field(<<"Name">>, Fields)),
++    ?assertMatch(#xdata_field{type = 'jid-multi',
++                              values = [<<"alice@example.test">>]},
++                 field(<<"Contact">>, Fields)).
++
++info_form_round_trips_through_codec_test() ->
++    Creator = jid:make(<<"alice">>, <<"example.test">>),
++    Form = mod_mix:info_node_form(<<"coven">>, Creator),
++    ?assertEqual(Form, xmpp:decode(xmpp:encode(Form))).
++
++field(Var, Fields) ->
++    case lists:keyfind(Var, #xdata_field.var, Fields) of
++        false -> {missing, Var};
++        Field -> Field
++    end.

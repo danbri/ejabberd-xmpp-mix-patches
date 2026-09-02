@@ -81,8 +81,8 @@ database state.
 
 - Focused EUnit: ordinary and sender-copy constructors both produce Core 1;
   sender copy retains `submission_id`. Result: `2 tests, 0 failures`.
-- Clean application: the mail patch applies to candidate patch 0002 commit
-  `4b96f51d031bab456cff62d1a8b6876fa9304742`.
+- Clean application: the mail patch applies on top of patch 0002 in
+  `patches/reviewer-series`; CI re-checks this on every push.
 - Production container build: passes on pinned Erlang/OTP `28.5.0.4`.
 - Authenticated raw probe: PAM 2/Core 1 join, immediate server echo containing
   Core 1, and MAM retrieval of the same unique message containing Core 1 all
