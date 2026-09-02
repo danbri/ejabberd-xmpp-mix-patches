@@ -3,7 +3,7 @@
 # The named volume is deliberately retained by `down`.
 set -euo pipefail
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 config="$repo_dir/docker/ejabberd.yml"
 container=${MIX_CONTAINER:-ejabberd-mix-review}
 image=${MIX_IMAGE:-localhost/foafmixer/ejabberd-mix:26.07-pilot}
@@ -61,7 +61,7 @@ container_exists() {
 
 wait_ready() {
   local attempt
-  for attempt in $(seq 1 30); do
+  for _ in $(seq 1 30); do
     if "$engine" exec "$container" ejabberdctl status >/dev/null 2>&1; then
       "$engine" exec "$container" ejabberdctl status
       return

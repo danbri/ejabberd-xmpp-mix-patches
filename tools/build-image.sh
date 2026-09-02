@@ -4,7 +4,7 @@
 # the build context.
 set -euo pipefail
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 series_file="$repo_dir/patches/reviewer-series"
 upstream_url=https://github.com/processone/ejabberd.git
 upstream_commit=413e7faee111028b7630523db82f7812ae285261

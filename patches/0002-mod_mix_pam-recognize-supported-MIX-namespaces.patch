@@ -1,4 +1,4 @@
-From b13d1fb71e501b09ee88c05d24d4c3f415e2d6a9 Mon Sep 17 00:00:00 2001
+From 88a92fb1c50cd0d4616e1e44e022d5e9fad5de95 Mon Sep 17 00:00:00 2001
 From: Dan Brickley <danbri@danbri.org>
 Date: Tue, 1 Sep 2026 13:58:49 +0100
 Subject: [PATCH] mod_mix_pam: recognize supported MIX namespaces

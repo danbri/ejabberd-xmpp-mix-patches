@@ -1,4 +1,4 @@
-From ebb9a96f2ba50069c812267a33dd606e1fa2bebd Mon Sep 17 00:00:00 2001
+From 062c29dbf38529b1f515044eac05974169fbcfd4 Mon Sep 17 00:00:00 2001
 From: Dan Brickley <danbri@danbri.org>
 Date: Tue, 1 Sep 2026 16:16:17 +0100
 Subject: [PATCH] mod_mix: emit Core 1 metadata on channel messages

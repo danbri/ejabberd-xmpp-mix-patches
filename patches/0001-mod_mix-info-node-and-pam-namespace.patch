@@ -1,4 +1,4 @@
-From 7d5c8bfb84121003071f5d70d3dd74ac3cf072f1 Mon Sep 17 00:00:00 2001
+From 9e40e72d59da9d1c267f2845cec97960971509b7 Mon Sep 17 00:00:00 2001
 From: Dan Brickley <danbri@danbri.org>
 Date: Wed, 2 Sep 2026 13:52:27 +0100
 Subject: [PATCH] mod_mix: serve the MIX information node and preserve the PAM
@@ -66,10 +66,14 @@ Verification:
 EUnit test/mod_mix_info_test.erl: the info node is negotiable, existing
 nodes remain negotiable, the form is typed urn:xmpp:mix:core:1, carries
 Name and a jid-multi Contact, and round-trips through the xmpp codec.
-Result on Erlang/OTP 29: 5 tests, 0 failures. End to end on the loopback
-pilot: BeagleIM 6.0.1 and the browser client joined a channel through PAM
-2/Core 1 with the info node in the subscription list and read it through
-PubSub; the client-join result was verified to carry urn:xmpp:mix:pam:2.
+Result on Erlang/OTP 29: 5 tests, 0 failures. The series applies cleanly
+to the pinned upstream commit with git am. Earlier revisions of this
+patch (Name-only form, participants-only access) ran in the loopback pilot
+with BeagleIM 6.0.1 and the browser client joining through PAM 2/Core 1
+with the info node in the subscription list. The current form and the
+discovery-read path are verified by a raw loopback probe against the
+container image built from this series; see docs/0001-info-node.md for
+the probe record.
 ---
  src/mod_mix.erl            | 63 +++++++++++++++++++++++++++++++++++++-
  src/mod_mix_pam.erl        | 17 +++++-----
